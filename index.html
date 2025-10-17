@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Crypto Live — Demo</title>
+  <style>
+    body{font-family:system-ui,Arial;margin:18px}
+    .card{border:1px solid #ddd;padding:12px;border-radius:8px;max-width:720px}
+    input,button{padding:8px;margin:4px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Crypto Live — Demo</h2>
+    <div>
+      <input id="coin" placeholder="coin id (e.g. bitcoin)" value="bitcoin" />
+      <button id="load">Load</button>
+    </div>
+    <div id="info"></div>
+    <canvas id="chart" width="720" height="300"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const coinInput = document.getElementById('coin');
+    const loadBtn = document.getElementById('load');
+    const info = document.getElementById('info');
+    const ctx = document.getElementById('chart');
+    let chart;
+
+    async function loadCoin(id){
+      const r = await fetch(`/api/coin/${id}`);
+      if (!r.ok){ info.innerText = 'Coin not found'; return; }
+      const data = await r.json();
+      info.innerHTML = `<strong>${data.name} (${data.symbol.toUpperCase()})</strong> <br> <img src='${data.image}'/>`;
+      const m = await fetch(`/api/coin/${id}/market_chart?days=1`).then(r=>r.json());
+      const prices = m.prices.map(p=>({x:new Date(p[0]), y:p[1]}));
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, { type: 'line', data: { datasets: [{ label: id, data: prices }] }, options: { parsing: { xAxisKey:'x', yAxisKey:'y' }, scales:{ x:{ type:'time', time:{ unit:'hour' } } } } });
+
+      socket.emit('subscribe', id);
+      fetch(`/api/track/${id}`, { method:'POST' });
+    }
+
+    const socket = io();
+    socket.on('price', (d) => {
+      if (!chart) return;
+      const ds = chart.data.datasets[0];
+      ds.data.push({ x: new Date(d.ts), y: d.data.usd });
+      if (ds.data.length>200) ds.data.shift();
+      chart.update('none');
+    });
+
+    loadBtn.onclick = () => loadCoin(coinInput.value.trim());
+    loadCoin(coinInput.value.trim());
+  </script>
+</body>
+</html>
